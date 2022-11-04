@@ -24,12 +24,33 @@ using namespace Nocturn;
 
 constexpr uint32 CMaxClients      = 10;
 constexpr uint32 CWorkerThreads	  = 2;
+constexpr uint32 CMaxMessageLen   = 1024;
 constexpr uint16 CMaxBufferLength = 0xffff; 
 
 struct Buffer
 {
-	OVERLAPPED overlapped;
-	uint8_t buffer[ CMaxBufferLength ];
+	OVERLAPPED	overlapped{ };
+	uint8_t		buffer[ CMaxBufferLength ]{ };
+	bool		isRecvOrSend{ };
+	bool		isHeaderOrBody{ };
+	uint32		connectionIndex{ };
+};
+
+enum class Opcode : uint16_t
+{
+	ChatMessage = 0
+	,	End
+};
+
+struct PacketHeader
+{
+	Opcode opcode;
+	uint16 length;
+};
+
+struct PacketMessage : PacketHeader
+{
+	char message[ CMaxMessageLen ];
 };
 
 struct Client
@@ -194,10 +215,6 @@ void WaitConnection( )
 			Log( "Succesfully accepted the new client {}", newClientIndex );
 			auto &currentClient = clients[ newClientIndex ];
 			currentClient.ClientSocket = acceptedSocket;
-			if( RSucces != currentClient.RecvAsync( ) )
-			{
-				continue;
-			}
 		}
 	}
 }
@@ -213,11 +230,28 @@ RStatus WorkerRoutine( )
 		const auto Result = ::GetQueuedCompletionStatus( iocp, &numberOfBytesTransfered, &completionKey, &overlaped, INFINITE );
 		if( false == Result )
 		{
-			Log( "Failed to associate socket to the IOCP WsaError: {}", GetLastError( ) );
+			Log( "Failed to associate socket to the IOCP WsaError: {}", ::GetLastError( ) );
 			return RFail;
 		}
 
 		auto buffer = reinterpret_cast< Buffer * >( overlaped );
+		auto client = clients[ buffer->connectionIndex ];
+
+		if( 0 == numberOfBytesTransfered )
+		{
+			// i think i have to shutdown and close socket - need to check
+		}
+		else
+		{
+			if( true == buffer->isRecvOrSend )
+			{
+				// Process header packet
+				if( true == buffer->isHeaderOrBody )
+				{
+					auto packetHeader = reinterpret_cast< PacketHeader * >( buffer->buffer );
+				}
+			}
+		}
 	}
 }
 
@@ -233,7 +267,7 @@ int main( )
 		WaitConnection( );
 	});
 
-
+	WorkerRoutine( );
 
 	return 0;
 }
